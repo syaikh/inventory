@@ -1,0 +1,21 @@
+# Go
+bin/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+
+# Node
+node_modules/
+web/svelte-app/node_modules/
+web/svelte-app/dist/
+
+# database
+inventory.db
+
+# IDE
+.vscode/
+.DS_Store
