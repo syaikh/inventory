@@ -3,6 +3,7 @@ package handlers
 import (
 	"encoding/json"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
 
@@ -34,7 +35,11 @@ func (h *Handler) Routes() http.Handler {
 	mux.HandleFunc("/api/events", h.handleSSE)
 
 	// Static files
-	mux.Handle("/", http.FileServer(http.Dir("web/static")))
+	staticDir := "web/static"
+	if _, err := os.Stat("web/svelte-app/dist"); err == nil {
+		staticDir = "web/svelte-app/dist"
+	}
+	mux.Handle("/", http.FileServer(http.Dir(staticDir)))
 
 	return mux
 }
