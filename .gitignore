@@ -1,21 +1,133 @@
-# Go
-bin/
+# ====== Go ======
+# Binaries for programs and plugins
 *.exe
 *.exe~
 *.dll
 *.so
+*.so.*
 *.dylib
+
+# Test binary, built with `go test -c`
 *.test
+
+# Output of the go coverage tool
 *.out
+.cover
+coverage.txt
+coverage.html
 
-# Node
+# Go workspace file
+go.work
+
+# Dependency directories
+vendor/
+
+# Build output
+bin/
+dist/
+
+# ====== Node.js ======
+# Dependencies
 node_modules/
-web/svelte-app/node_modules/
-web/svelte-app/dist/
+npm-debug.log*
+npm-error.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+pnpm-error.log*
+lerna-debug.log*
 
-# database
+# Build output
+web/svelte-app/dist/
+web/svelte-app/build/
+
+# Cache and lock files (optional, uncomment if you want to commit)
+# package-lock.json
+# yarn.lock
+# pnpm-lock.yaml
+
+# Environment variables
+.env
+.env.local
+.env.*.local
+
+# ====== Database ======
+*.db
+*.sqlite
+*.sqlite3
 inventory.db
 
-# IDE
+# ====== IDE & Editor ======
 .vscode/
+.idea/
+*.swp
+*.swo
+*~
 .DS_Store
+.AppleDouble
+.LSOverride
+*.sublime-project
+*.sublime-workspace
+.vim/
+.emacs.d/
+
+# Editor directories and files
+out/
+.project
+.classpath
+.c9/
+*.launch
+.settings/
+
+# ====== OS specific ======
+Thumbs.db
+*.cab
+*.msi
+*.msix
+*.msapp
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Icon?
+Icon
+*.icns
+
+# ====== Build artifacts ======
+*.o
+*.a
+*.la
+*.lo
+*.so
+*.dylib
+*.sa
+*.jar
+*.zip
+*.gz
+*.tar
+*.rar
+
+# ====== Development ======
+.tmp/
+tmp/
+temp/
+*.bak
+*.log
+debug/
+dist/
+build/
+
+# ====== Project specific ======
+web/static/index.old.html
+.env.development
+.env.production
+
+# ====== NPM & npm cache ======
+.npm
+.eslintcache
+.stylelintcache
+
+# ====== Misc ======
+*.pem
+*.key
+.DS_Store
+.env.*.local
