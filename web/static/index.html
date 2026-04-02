@@ -1,0 +1,537 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Inventory System</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg: #f9f9f8; --surface: #fff; --border: #e4e2da;
+    --text: #1a1a18; --muted: #6b6b66; --accent: #1a6ef7;
+    --green: #1d9e75; --red: #d85a30; --amber: #ba7517;
+    --radius: 8px; --sidebar: 220px;
+  }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    background: var(--bg); color: var(--text); font-size: 14px; display: flex; min-height: 100vh; }
+
+  /* Sidebar */
+  aside { width: var(--sidebar); background: var(--surface); border-right: 1px solid var(--border);
+    display: flex; flex-direction: column; padding: 1.5rem 0; position: fixed; top: 0; bottom: 0; left: 0; }
+  .logo { padding: 0 1.25rem 1.5rem; font-size: 16px; font-weight: 600; display: flex; align-items: center; gap: 8px; }
+  .logo svg { flex-shrink: 0; }
+  nav a { display: flex; align-items: center; gap: 10px; padding: 9px 1.25rem;
+    color: var(--muted); text-decoration: none; border-left: 3px solid transparent; transition: all .15s; }
+  nav a:hover { color: var(--text); background: var(--bg); }
+  nav a.active { color: var(--accent); border-left-color: var(--accent); background: #eef4ff; }
+  nav a svg { width: 16px; height: 16px; flex-shrink: 0; }
+
+  /* Main */
+  main { margin-left: var(--sidebar); flex: 1; padding: 2rem; max-width: 1100px; }
+  .page { display: none; }
+  .page.active { display: block; }
+  h1 { font-size: 20px; font-weight: 600; margin-bottom: 1.5rem; }
+
+  /* Stats */
+  .stats-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 2rem; }
+  .stat-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+    padding: 1rem 1.25rem; }
+  .stat-card .label { font-size: 12px; color: var(--muted); margin-bottom: 4px; }
+  .stat-card .value { font-size: 24px; font-weight: 600; }
+
+  /* Scanner panel */
+  .scan-panel { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+    padding: 1.5rem; margin-bottom: 1.5rem; }
+  .scan-panel h2 { font-size: 15px; font-weight: 600; margin-bottom: 1rem; }
+  .scan-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .scan-row input[type=text] { flex: 1; min-width: 200px; padding: 8px 12px; border: 1px solid var(--border);
+    border-radius: var(--radius); font-size: 14px; background: var(--bg); }
+  .scan-row input:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+  .mode-toggle { display: flex; border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
+  .mode-toggle button { padding: 8px 16px; border: none; background: none; cursor: pointer;
+    font-size: 13px; color: var(--muted); transition: all .15s; }
+  .mode-toggle button.active { background: var(--accent); color: #fff; }
+  .qty-input { width: 64px; padding: 8px; border: 1px solid var(--border); border-radius: var(--radius);
+    font-size: 14px; text-align: center; }
+  .btn { padding: 8px 16px; border-radius: var(--radius); border: 1px solid var(--border);
+    cursor: pointer; font-size: 13px; font-weight: 500; transition: all .15s; background: var(--surface); }
+  .btn:hover { background: var(--bg); }
+  .btn-primary { background: var(--accent); color: #fff; border-color: var(--accent); }
+  .btn-primary:hover { background: #155fd4; }
+  .btn-danger { background: var(--red); color: #fff; border-color: var(--red); }
+  .btn-danger:hover { background: #b84a22; }
+  .btn-sm { padding: 5px 10px; font-size: 12px; }
+
+  /* Scan log */
+  .scan-log { max-height: 160px; overflow-y: auto; border: 1px solid var(--border);
+    border-radius: var(--radius); background: #fafaf8; }
+  .scan-log-item { display: flex; justify-content: space-between; align-items: center;
+    padding: 8px 12px; border-bottom: 1px solid var(--border); font-size: 13px; }
+  .scan-log-item:last-child { border-bottom: none; }
+  .badge { padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; }
+  .badge-in { background: #e1f5ee; color: #0f6e56; }
+  .badge-out { background: #faece7; color: #993c1d; }
+  .badge-warn { background: #faeeda; color: #854f0b; }
+
+  /* Item indicator */
+  .item-preview { margin-top: 1rem; padding: 12px; background: var(--bg); border-radius: var(--radius);
+    border: 1px solid var(--border); display: none; }
+  .item-preview.show { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+  .item-preview .name { font-weight: 600; }
+  .item-preview .meta { font-size: 12px; color: var(--muted); margin-top: 2px; }
+  .item-preview .qty-big { font-size: 22px; font-weight: 700; }
+
+  /* Toolbar */
+  .toolbar { display: flex; gap: 8px; margin-bottom: 1rem; flex-wrap: wrap; align-items: center; }
+  .toolbar input[type=text] { flex: 1; min-width: 180px; padding: 7px 12px; border: 1px solid var(--border);
+    border-radius: var(--radius); font-size: 13px; background: var(--surface); }
+  .toolbar select { padding: 7px 10px; border: 1px solid var(--border);
+    border-radius: var(--radius); font-size: 13px; background: var(--surface); }
+
+  /* Table */
+  .table-wrap { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
+  table { width: 100%; border-collapse: collapse; }
+  thead { background: var(--bg); }
+  th { padding: 10px 14px; text-align: left; font-size: 12px; color: var(--muted); font-weight: 500;
+    border-bottom: 1px solid var(--border); text-transform: uppercase; letter-spacing: .04em; }
+  td { padding: 10px 14px; border-bottom: 1px solid #f0ede6; font-size: 13px; }
+  tr:last-child td { border-bottom: none; }
+  tr:hover td { background: #fafaf8; }
+  .qty-low { color: var(--red); font-weight: 600; }
+  .qty-ok  { color: var(--green); font-weight: 600; }
+
+  /* Modal */
+  .overlay { position: fixed; inset: 0; background: rgba(0,0,0,.35); display: none;
+    align-items: center; justify-content: center; z-index: 100; }
+  .overlay.show { display: flex; }
+  .modal { background: var(--surface); border-radius: 12px; padding: 1.5rem;
+    width: 100%; max-width: 460px; border: 1px solid var(--border); }
+  .modal h2 { font-size: 16px; font-weight: 600; margin-bottom: 1.25rem; }
+  .form-group { margin-bottom: 12px; }
+  label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 4px; }
+  input, select, textarea { width: 100%; padding: 8px 10px; border: 1px solid var(--border);
+    border-radius: var(--radius); font-size: 13px; background: var(--bg); }
+  input:focus, select:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+  .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 1.25rem; }
+
+  /* Toast */
+  .toast { position: fixed; bottom: 1.5rem; right: 1.5rem; background: var(--text); color: #fff;
+    padding: 10px 18px; border-radius: var(--radius); font-size: 13px; opacity: 0;
+    transition: opacity .25s; z-index: 999; pointer-events: none; }
+  .toast.show { opacity: 1; }
+
+  .empty { text-align: center; padding: 3rem 1rem; color: var(--muted); }
+  .indicator { width: 8px; height: 8px; border-radius: 50%; display: inline-block; margin-right: 4px; }
+  .indicator.live { background: var(--green); animation: pulse 1.5s infinite; }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.4} }
+</style>
+</head>
+<body>
+
+<aside>
+  <div class="logo">
+    <svg viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg" width="22" height="22">
+      <rect x="2" y="4" width="16" height="12" rx="2" stroke="#1a6ef7" stroke-width="1.5"/>
+      <path d="M6 8h8M6 12h5" stroke="#1a6ef7" stroke-width="1.5" stroke-linecap="round"/>
+    </svg>
+    Inventory
+  </div>
+  <nav>
+    <a href="#" class="active" data-page="dashboard">
+      <svg viewBox="0 0 16 16" fill="currentColor"><path d="M2 2h5v5H2zM9 2h5v5H9zM2 9h5v5H2zM9 9h5v5H9z"/></svg>
+      Dashboard
+    </a>
+    <a href="#" data-page="items">
+      <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="2" width="12" height="12" rx="1.5"/><path d="M5 6h6M5 10h4"/></svg>
+      Items
+    </a>
+    <a href="#" data-page="scanner">
+      <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 5V3h3M11 3h3v2M2 11v2h3M11 13h3v-2M5 6v4M7 5v6M9 6v4M11 5v6"/></svg>
+      Scanner
+    </a>
+    <a href="#" data-page="history">
+      <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6"/><path d="M8 5v3.5l2 1.5"/></svg>
+      History
+    </a>
+  </nav>
+</aside>
+
+<main>
+  <!-- Dashboard -->
+  <div class="page active" id="page-dashboard">
+    <h1>Dashboard</h1>
+    <div class="stats-grid">
+      <div class="stat-card"><div class="label">Total Items</div><div class="value" id="stat-items">—</div></div>
+      <div class="stat-card"><div class="label">Total Units</div><div class="value" id="stat-units">—</div></div>
+      <div class="stat-card"><div class="label">Out of Stock</div><div class="value" id="stat-oos" style="color:var(--red)">—</div></div>
+      <div class="stat-card"><div class="label">Scans Today</div><div class="value" id="stat-scans">—</div></div>
+    </div>
+
+    <div class="scan-panel">
+      <h2><span class="indicator live" id="live-dot"></span> Live Scan Feed</h2>
+      <div id="live-log" class="scan-log"><div class="empty" style="padding:1rem">Waiting for scans…</div></div>
+    </div>
+
+    <div class="table-wrap">
+      <table id="low-stock-table">
+        <thead><tr><th>Barcode</th><th>Name</th><th>Category</th><th>Stock</th><th>Unit</th></tr></thead>
+        <tbody id="low-stock-body"><tr><td colspan="5" class="empty">Loading…</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Items -->
+  <div class="page" id="page-items">
+    <h1>Items</h1>
+    <div class="toolbar">
+      <input type="text" id="item-search" placeholder="Search name, barcode, SKU…" oninput="loadItems()">
+      <select id="cat-filter" onchange="loadItems()">
+        <option value="">All categories</option>
+      </select>
+      <button class="btn btn-primary" onclick="openItemModal()">+ Add Item</button>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Barcode</th><th>Name</th><th>SKU</th><th>Category</th><th>Stock</th><th>Unit</th><th>Price</th><th>Location</th><th></th></tr></thead>
+        <tbody id="items-body"><tr><td colspan="9" class="empty">Loading…</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Scanner -->
+  <div class="page" id="page-scanner">
+    <h1>Scanner</h1>
+    <div class="scan-panel">
+      <h2>Manual Scan / Quick Entry</h2>
+      <p style="color:var(--muted);font-size:12px;margin-bottom:1rem">
+        USB barcode scanners work automatically — just scan any item.
+        Use this form for manual entry or to override quantity.
+      </p>
+      <div class="scan-row">
+        <input type="text" id="barcode-input" placeholder="Scan or type barcode…" autocomplete="off"
+               onkeydown="if(event.key==='Enter') submitScan()">
+        <div class="mode-toggle">
+          <button class="active" id="mode-in" onclick="setMode('in')">▲ IN</button>
+          <button id="mode-out" onclick="setMode('out')">▼ OUT</button>
+        </div>
+        <input type="number" class="qty-input" id="scan-qty" value="1" min="1">
+        <button class="btn btn-primary" onclick="submitScan()">Scan</button>
+      </div>
+      <div class="item-preview" id="item-preview">
+        <div>
+          <div class="name" id="prev-name"></div>
+          <div class="meta" id="prev-meta"></div>
+        </div>
+        <div class="qty-big" id="prev-qty"></div>
+      </div>
+    </div>
+    <h2 style="font-size:15px;font-weight:600;margin-bottom:.75rem">Recent Scans</h2>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Time</th><th>Barcode</th><th>Item</th><th>Type</th><th>Qty</th></tr></thead>
+        <tbody id="scan-history-body"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- History -->
+  <div class="page" id="page-history">
+    <h1>Transaction History</h1>
+    <div class="toolbar">
+      <input type="text" id="hist-barcode" placeholder="Filter by barcode…" oninput="loadHistory()">
+      <button class="btn" onclick="loadHistory()">Refresh</button>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Time</th><th>Barcode</th><th>Item</th><th>Type</th><th>Qty</th><th>Note</th></tr></thead>
+        <tbody id="history-body"><tr><td colspan="6" class="empty">Loading…</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+</main>
+
+<!-- Item modal -->
+<div class="overlay" id="item-modal">
+  <div class="modal">
+    <h2 id="modal-title">Add Item</h2>
+    <input type="hidden" id="edit-id">
+    <div class="form-row">
+      <div class="form-group">
+        <label>Barcode *</label>
+        <input type="text" id="f-barcode" placeholder="e.g. 012345678905">
+      </div>
+      <div class="form-group">
+        <label>SKU</label>
+        <input type="text" id="f-sku" placeholder="e.g. PROD-001">
+      </div>
+    </div>
+    <div class="form-group">
+      <label>Name *</label>
+      <input type="text" id="f-name" placeholder="Product name">
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label>Category</label>
+        <input type="text" id="f-category" placeholder="e.g. Electronics">
+      </div>
+      <div class="form-group">
+        <label>Location</label>
+        <input type="text" id="f-location" placeholder="e.g. A-12">
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label>Initial Quantity</label>
+        <input type="number" id="f-quantity" value="0" min="0">
+      </div>
+      <div class="form-group">
+        <label>Unit</label>
+        <input type="text" id="f-unit" value="pcs">
+      </div>
+    </div>
+    <div class="form-group">
+      <label>Price</label>
+      <input type="number" id="f-price" value="0" step="0.01" min="0">
+    </div>
+    <div class="modal-actions">
+      <button class="btn" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="saveItem()">Save</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const API = '';
+let scanMode = 'in';
+let liveLog = [];
+
+// Navigation
+document.querySelectorAll('nav a').forEach(a => {
+  a.addEventListener('click', e => {
+    e.preventDefault();
+    const page = a.dataset.page;
+    document.querySelectorAll('nav a').forEach(x => x.classList.remove('active'));
+    document.querySelectorAll('.page').forEach(x => x.classList.remove('active'));
+    a.classList.add('active');
+    document.getElementById('page-' + page).classList.add('active');
+    if (page === 'items') { loadItems(); loadCategories(); }
+    if (page === 'history') loadHistory();
+    if (page === 'scanner') loadScanHistory();
+    if (page === 'dashboard') loadDashboard();
+  });
+});
+
+// SSE — live scan events
+const evtSource = new EventSource(API + '/api/events');
+evtSource.onmessage = e => {
+  const ev = JSON.parse(e.data);
+  addLiveLog(ev);
+  refreshStats();
+  const page = document.querySelector('.page.active').id;
+  if (page === 'page-scanner') loadScanHistory();
+  if (page === 'page-history') loadHistory();
+  if (page === 'page-items') loadItems();
+};
+
+function addLiveLog(ev) {
+  const container = document.getElementById('live-log');
+  if (container.querySelector('.empty')) container.innerHTML = '';
+  const div = document.createElement('div');
+  div.className = 'scan-log-item';
+  const badge = ev.mode === 'in' ? '<span class="badge badge-in">IN</span>' : '<span class="badge badge-out">OUT</span>';
+  div.innerHTML = `<span>${badge} <strong>${ev.barcode}</strong></span><span style="color:var(--muted)">${new Date().toLocaleTimeString()}</span>`;
+  container.prepend(div);
+  while (container.children.length > 30) container.lastChild.remove();
+}
+
+// Dashboard
+async function loadDashboard() {
+  refreshStats();
+  const res = await fetch(API + '/api/items');
+  const items = await res.json();
+  const low = items.filter(i => i.quantity <= 5).sort((a,b) => a.quantity - b.quantity).slice(0, 10);
+  const tbody = document.getElementById('low-stock-body');
+  if (!low.length) { tbody.innerHTML = '<tr><td colspan="5" class="empty">All items have sufficient stock</td></tr>'; return; }
+  tbody.innerHTML = low.map(i => `
+    <tr>
+      <td><code>${i.barcode}</code></td>
+      <td>${i.name}</td>
+      <td>${i.category || '—'}</td>
+      <td class="${i.quantity === 0 ? 'qty-low' : 'badge-warn'}" style="font-weight:600">${i.quantity}</td>
+      <td>${i.unit}</td>
+    </tr>`).join('');
+}
+
+async function refreshStats() {
+  const res = await fetch(API + '/api/stats');
+  const s = await res.json();
+  document.getElementById('stat-items').textContent = s.total_items ?? 0;
+  document.getElementById('stat-units').textContent = s.total_units ?? 0;
+  document.getElementById('stat-oos').textContent = s.out_of_stock ?? 0;
+  document.getElementById('stat-scans').textContent = s.scans_today ?? 0;
+}
+
+// Items
+async function loadItems() {
+  const search = document.getElementById('item-search').value;
+  const cat = document.getElementById('cat-filter').value;
+  const res = await fetch(`${API}/api/items?search=${encodeURIComponent(search)}&category=${encodeURIComponent(cat)}`);
+  const items = await res.json();
+  const tbody = document.getElementById('items-body');
+  if (!items.length) { tbody.innerHTML = '<tr><td colspan="9" class="empty">No items found</td></tr>'; return; }
+  tbody.innerHTML = items.map(i => `
+    <tr>
+      <td><code>${i.barcode}</code></td>
+      <td>${i.name}</td>
+      <td>${i.sku || '—'}</td>
+      <td>${i.category || '—'}</td>
+      <td class="${i.quantity === 0 ? 'qty-low' : 'qty-ok'}">${i.quantity}</td>
+      <td>${i.unit}</td>
+      <td>${i.price ? '$' + i.price.toFixed(2) : '—'}</td>
+      <td>${i.location || '—'}</td>
+      <td>
+        <button class="btn btn-sm" onclick="openItemModal(${JSON.stringify(i).replace(/"/g,'&quot;')})">Edit</button>
+        <button class="btn btn-sm btn-danger" onclick="deleteItem(${i.id})">Del</button>
+      </td>
+    </tr>`).join('');
+}
+
+async function loadCategories() {
+  const res = await fetch(API + '/api/categories');
+  const cats = await res.json();
+  const sel = document.getElementById('cat-filter');
+  const cur = sel.value;
+  sel.innerHTML = '<option value="">All categories</option>' +
+    cats.map(c => `<option value="${c}" ${c===cur?'selected':''}>${c}</option>`).join('');
+}
+
+function openItemModal(item) {
+  document.getElementById('modal-title').textContent = item ? 'Edit Item' : 'Add Item';
+  document.getElementById('edit-id').value = item ? item.id : '';
+  document.getElementById('f-barcode').value = item ? item.barcode : '';
+  document.getElementById('f-name').value = item ? item.name : '';
+  document.getElementById('f-sku').value = item ? item.sku : '';
+  document.getElementById('f-category').value = item ? item.category : '';
+  document.getElementById('f-location').value = item ? item.location : '';
+  document.getElementById('f-quantity').value = item ? item.quantity : 0;
+  document.getElementById('f-unit').value = item ? item.unit : 'pcs';
+  document.getElementById('f-price').value = item ? item.price : 0;
+  document.getElementById('item-modal').classList.add('show');
+}
+
+function closeModal() { document.getElementById('item-modal').classList.remove('show'); }
+
+async function saveItem() {
+  const barcode = document.getElementById('f-barcode').value.trim();
+  const name = document.getElementById('f-name').value.trim();
+  if (!barcode || !name) { toast('Barcode and name are required', true); return; }
+  const body = {
+    barcode, name,
+    sku: document.getElementById('f-sku').value.trim(),
+    category: document.getElementById('f-category').value.trim(),
+    location: document.getElementById('f-location').value.trim(),
+    quantity: parseInt(document.getElementById('f-quantity').value) || 0,
+    unit: document.getElementById('f-unit').value.trim() || 'pcs',
+    price: parseFloat(document.getElementById('f-price').value) || 0,
+  };
+  await fetch(API + '/api/items', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(body) });
+  closeModal();
+  loadItems();
+  loadCategories();
+  refreshStats();
+  toast('Item saved');
+}
+
+async function deleteItem(id) {
+  if (!confirm('Delete this item?')) return;
+  await fetch(API + '/api/items/' + id, { method: 'DELETE' });
+  loadItems();
+  refreshStats();
+  toast('Item deleted');
+}
+
+// Scanner
+function setMode(m) {
+  scanMode = m;
+  document.getElementById('mode-in').classList.toggle('active', m === 'in');
+  document.getElementById('mode-out').classList.toggle('active', m === 'out');
+}
+
+async function submitScan() {
+  const barcode = document.getElementById('barcode-input').value.trim();
+  if (!barcode) return;
+  const qty = parseInt(document.getElementById('scan-qty').value) || 1;
+  const res = await fetch(API + '/api/scan', {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({ barcode, mode: scanMode, qty })
+  });
+  const item = await res.json();
+  document.getElementById('barcode-input').value = '';
+  document.getElementById('barcode-input').focus();
+  if (item && item.barcode) {
+    const prev = document.getElementById('item-preview');
+    prev.classList.add('show');
+    document.getElementById('prev-name').textContent = item.name;
+    document.getElementById('prev-meta').textContent = `${item.barcode} · ${item.category || 'No category'} · ${item.location || 'No location'}`;
+    document.getElementById('prev-qty').textContent = item.quantity + ' ' + item.unit;
+    document.getElementById('prev-qty').style.color = item.quantity === 0 ? 'var(--red)' : 'var(--green)';
+    toast(scanMode === 'in' ? '▲ Scanned IN: ' + item.name : '▼ Scanned OUT: ' + item.name);
+  }
+  loadScanHistory();
+}
+
+async function loadScanHistory() {
+  const res = await fetch(API + '/api/transactions?limit=20');
+  const txs = await res.json();
+  const tbody = document.getElementById('scan-history-body');
+  if (!txs.length) { tbody.innerHTML = '<tr><td colspan="5" class="empty">No scans yet</td></tr>'; return; }
+  tbody.innerHTML = txs.map(t => `
+    <tr>
+      <td style="color:var(--muted)">${new Date(t.created_at).toLocaleString()}</td>
+      <td><code>${t.barcode}</code></td>
+      <td>${t.item_name}</td>
+      <td>${t.type === 'scan_in' ? '<span class="badge badge-in">IN</span>' : t.type === 'scan_out' ? '<span class="badge badge-out">OUT</span>' : t.type}</td>
+      <td>${t.quantity}</td>
+    </tr>`).join('');
+}
+
+// History
+async function loadHistory() {
+  const barcode = document.getElementById('hist-barcode').value.trim();
+  const url = barcode ? `/api/transactions?barcode=${encodeURIComponent(barcode)}&limit=100` : '/api/transactions?limit=100';
+  const res = await fetch(API + url);
+  const txs = await res.json();
+  const tbody = document.getElementById('history-body');
+  if (!txs.length) { tbody.innerHTML = '<tr><td colspan="6" class="empty">No transactions</td></tr>'; return; }
+  tbody.innerHTML = txs.map(t => `
+    <tr>
+      <td style="color:var(--muted)">${new Date(t.created_at).toLocaleString()}</td>
+      <td><code>${t.barcode}</code></td>
+      <td>${t.item_name}</td>
+      <td>${t.type === 'scan_in' ? '<span class="badge badge-in">IN</span>' : t.type === 'scan_out' ? '<span class="badge badge-out">OUT</span>' : t.type}</td>
+      <td>${t.quantity}</td>
+      <td style="color:var(--muted)">${t.note || '—'}</td>
+    </tr>`).join('');
+}
+
+// Toast
+function toast(msg, err) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.style.background = err ? 'var(--red)' : 'var(--text)';
+  el.classList.add('show');
+  setTimeout(() => el.classList.remove('show'), 3000);
+}
+
+// Close modal on overlay click
+document.getElementById('item-modal').addEventListener('click', e => { if (e.target === e.currentTarget) closeModal(); });
+
+// Init
+loadDashboard();
+</script>
+</body>
+</html>
