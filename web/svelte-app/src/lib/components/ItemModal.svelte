@@ -79,41 +79,41 @@
       <h2>{$editingItem ? 'Edit Item' : 'Add Item'}</h2>
       <div class="form-row">
         <div class="form-group">
-          <label>Barcode *</label>
-          <input type="text" bind:value={fBarcode} placeholder="e.g. 012345678905" />
+          <label for="f-barcode">Barcode *</label>
+          <input id="f-barcode" type="text" bind:value={fBarcode} placeholder="e.g. 012345678905" />
         </div>
         <div class="form-group">
-          <label>SKU</label>
-          <input type="text" bind:value={fSKU} placeholder="e.g. PROD-001" />
+          <label for="f-sku">SKU</label>
+          <input id="f-sku" type="text" bind:value={fSKU} placeholder="e.g. PROD-001" />
         </div>
       </div>
       <div class="form-group">
-        <label>Name *</label>
-        <input type="text" bind:value={fName} placeholder="Product name" />
+        <label for="f-name">Name *</label>
+        <input id="f-name" type="text" bind:value={fName} placeholder="Product name" />
       </div>
       <div class="form-row">
         <div class="form-group">
-          <label>Category</label>
-          <input type="text" bind:value={fCategory} placeholder="e.g. Electronics" />
+          <label for="f-category">Category</label>
+          <input id="f-category" type="text" bind:value={fCategory} placeholder="e.g. Electronics" />
         </div>
         <div class="form-group">
-          <label>Location</label>
-          <input type="text" bind:value={fLocation} placeholder="e.g. A-12" />
+          <label for="f-location">Location</label>
+          <input id="f-location" type="text" bind:value={fLocation} placeholder="e.g. A-12" />
         </div>
       </div>
       <div class="form-row">
         <div class="form-group">
-          <label>Initial Quantity</label>
-          <input type="number" bind:value={fQuantity} min="0" />
+          <label for="f-quantity">Initial Quantity</label>
+          <input id="f-quantity" type="number" bind:value={fQuantity} min="0" />
         </div>
         <div class="form-group">
-          <label>Unit</label>
-          <input type="text" bind:value={fUnit} />
+          <label for="f-unit">Unit</label>
+          <input id="f-unit" type="text" bind:value={fUnit} />
         </div>
       </div>
       <div class="form-group">
-        <label>Price</label>
-        <input type="number" bind:value={fPrice} step="0.01" min="0" />
+        <label for="f-price">Price</label>
+        <input id="f-price" type="number" bind:value={fPrice} step="0.01" min="0" />
       </div>
       <div class="modal-actions">
         <button class="btn" on:click={closeModal}>Cancel</button>
