@@ -207,12 +207,17 @@ func (s *Store) Stats() (map[string]any, error) {
 	if err := s.db.QueryRow(`SELECT COUNT(*) FROM transactions WHERE DATE(created_at) = DATE('now')`).Scan(&scansToday); err != nil {
 		return nil, err
 	}
+	var totalCategories int64
+	if err := s.db.QueryRow(`SELECT COUNT(DISTINCT category) FROM items WHERE category != ''`).Scan(&totalCategories); err != nil {
+		return nil, err
+	}
 
 	stats := map[string]any{
-		"total_items":  totalItems,
-		"total_units":  totalUnits,
-		"out_of_stock": outOfStock,
-		"scans_today":  scansToday,
+		"total_items":      totalItems,
+		"total_units":      totalUnits,
+		"out_of_stock":     outOfStock,
+		"scans_today":      scansToday,
+		"total_categories": totalCategories,
 	}
 	return stats, nil
 }

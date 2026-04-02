@@ -8,6 +8,18 @@
 
   onMount(async () => {
     await loadData();
+
+    const refresh = async () => {
+      await loadData();
+    };
+
+    window.addEventListener('itemSaved', refresh);
+    window.addEventListener('itemDeleted', refresh);
+
+    return () => {
+      window.removeEventListener('itemSaved', refresh);
+      window.removeEventListener('itemDeleted', refresh);
+    };
   });
 
   async function loadData() {

@@ -16,6 +16,10 @@
     <div class="value" style="color:var(--red)">{$stats.out_of_stock || 0}</div>
   </div>
   <div class="stat-card">
+    <div class="label">Total Categories</div>
+    <div class="value">{$stats.total_categories || 0}</div>
+  </div>
+  <div class="stat-card">
     <div class="label">Scans Today</div>
     <div class="value">{$stats.scans_today || 0}</div>
   </div>
