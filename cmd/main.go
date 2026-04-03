@@ -16,7 +16,7 @@ import (
 
 func main() {
 	addr := flag.String("addr", ":8080", "HTTP listen address")
-	dbPath := flag.String("db", "inventory.db", "SQLite database path")
+	dbDSN := flag.String("db", "postgres://user:password@localhost/inventory?sslmode=disable", "PostgreSQL DSN")
 	device := flag.String("device", "", "USB HID event device, e.g. /dev/input/event3 (auto-detect if empty)")
 	scanMode := flag.String("mode", "in", "Default scan mode: 'in' or 'out'")
 	listDevices := flag.Bool("list-devices", false, "List detected HID input devices and exit")
@@ -40,12 +40,12 @@ func main() {
 	}
 
 	// Open DB
-	s, err := store.New(*dbPath)
+	s, err := store.New(*dbDSN)
 	if err != nil {
 		log.Fatal("DB error:", err)
 	}
 	defer s.Close()
-	log.Println("Database opened:", *dbPath)
+	log.Println("Database connected:", *dbDSN)
 
 	// Resolve HID device
 	hidDevice := *device

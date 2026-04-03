@@ -7,15 +7,15 @@ import (
 
 	"inventory/internal/models"
 
-	_ "github.com/mattn/go-sqlite3"
+	_ "github.com/lib/pq"
 )
 
 type Store struct {
 	db *sql.DB
 }
 
-func New(path string) (*Store, error) {
-	db, err := sql.Open("sqlite3", path)
+func New(dsn string) (*Store, error) {
+	db, err := sql.Open("postgres", dsn)
 	if err != nil {
 		return nil, err
 	}
@@ -29,26 +29,26 @@ func New(path string) (*Store, error) {
 func (s *Store) migrate() error {
 	_, err := s.db.Exec(`
 		CREATE TABLE IF NOT EXISTS items (
-			id         INTEGER PRIMARY KEY AUTOINCREMENT,
-			barcode    TEXT    UNIQUE NOT NULL,
-			name       TEXT    NOT NULL DEFAULT '',
-			sku        TEXT    NOT NULL DEFAULT '',
-			category   TEXT    NOT NULL DEFAULT '',
+			id         SERIAL PRIMARY KEY,
+			barcode    VARCHAR(255) UNIQUE NOT NULL,
+			name       VARCHAR(255) NOT NULL DEFAULT '',
+			sku        VARCHAR(255) NOT NULL DEFAULT '',
+			category   VARCHAR(255) NOT NULL DEFAULT '',
 			quantity   INTEGER NOT NULL DEFAULT 0,
-			unit       TEXT    NOT NULL DEFAULT 'pcs',
-			price      REAL    NOT NULL DEFAULT 0,
-			location   TEXT    NOT NULL DEFAULT '',
-			created_at DATETIME NOT NULL,
-			updated_at DATETIME NOT NULL
+			unit       VARCHAR(50) NOT NULL DEFAULT 'pcs',
+			price      DECIMAL(10,2) NOT NULL DEFAULT 0,
+			location   VARCHAR(255) NOT NULL DEFAULT '',
+			created_at TIMESTAMP NOT NULL,
+			updated_at TIMESTAMP NOT NULL
 		);
 		CREATE TABLE IF NOT EXISTS transactions (
-			id         INTEGER PRIMARY KEY AUTOINCREMENT,
-			barcode    TEXT    NOT NULL,
-			item_name  TEXT    NOT NULL DEFAULT '',
-			type       TEXT    NOT NULL,
+			id         SERIAL PRIMARY KEY,
+			barcode    VARCHAR(255) NOT NULL,
+			item_name  VARCHAR(255) NOT NULL DEFAULT '',
+			type       VARCHAR(50) NOT NULL,
 			quantity   INTEGER NOT NULL,
-			note       TEXT    NOT NULL DEFAULT '',
-			created_at DATETIME NOT NULL
+			note       TEXT NOT NULL DEFAULT '',
+			created_at TIMESTAMP NOT NULL
 		);
 	`)
 	return err
@@ -61,14 +61,14 @@ func (s *Store) Close() { s.db.Close() }
 func (s *Store) GetItem(barcode string) (*models.Item, error) {
 	row := s.db.QueryRow(
 		`SELECT id, barcode, name, sku, category, quantity, unit, price, location, created_at, updated_at
-		 FROM items WHERE barcode = ?`, barcode)
+		 FROM items WHERE barcode = $1`, barcode)
 	return scanItem(row)
 }
 
 func (s *Store) GetItemByID(id int64) (*models.Item, error) {
 	row := s.db.QueryRow(
 		`SELECT id, barcode, name, sku, category, quantity, unit, price, location, created_at, updated_at
-		 FROM items WHERE id = ?`, id)
+		 FROM items WHERE id = $1`, id)
 	return scanItem(row)
 }
 
@@ -86,7 +86,7 @@ func (s *Store) UpsertItem(it *models.Item) error {
 	now := time.Now()
 	_, err := s.db.Exec(`
 		INSERT INTO items (barcode, name, sku, category, quantity, unit, price, location, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
 		ON CONFLICT(barcode) DO UPDATE SET
 			name=excluded.name, sku=excluded.sku, category=excluded.category,
 			unit=excluded.unit, price=excluded.price, location=excluded.location,
@@ -98,7 +98,7 @@ func (s *Store) UpsertItem(it *models.Item) error {
 
 func (s *Store) UpdateQuantity(barcode string, delta int) (*models.Item, error) {
 	_, err := s.db.Exec(
-		`UPDATE items SET quantity = quantity + ?, updated_at = ? WHERE barcode = ?`,
+		`UPDATE items SET quantity = quantity + $1, updated_at = $2 WHERE barcode = $3`,
 		delta, time.Now(), barcode)
 	if err != nil {
 		return nil, err
@@ -107,7 +107,7 @@ func (s *Store) UpdateQuantity(barcode string, delta int) (*models.Item, error) 
 }
 
 func (s *Store) DeleteItem(id int64) error {
-	_, err := s.db.Exec(`DELETE FROM items WHERE id = ?`, id)
+	_, err := s.db.Exec(`DELETE FROM items WHERE id = $1`, id)
 	return err
 }
 
@@ -116,12 +116,12 @@ func (s *Store) ListItems(search, category string) ([]models.Item, error) {
 	      FROM items WHERE 1=1`
 	args := []any{}
 	if search != "" {
-		q += ` AND (name LIKE ? OR barcode LIKE ? OR sku LIKE ?)`
+		q += ` AND (name ILIKE $1 OR barcode ILIKE $2 OR sku ILIKE $3)`
 		like := "%" + search + "%"
 		args = append(args, like, like, like)
 	}
 	if category != "" {
-		q += ` AND category = ?`
+		q += fmt.Sprintf(` AND category = $%d`, len(args)+1)
 		args = append(args, category)
 	}
 	q += ` ORDER BY name`
@@ -159,7 +159,7 @@ func (s *Store) Categories() ([]string, error) {
 
 func (s *Store) AddTransaction(t *models.Transaction) error {
 	_, err := s.db.Exec(
-		`INSERT INTO transactions (barcode, item_name, type, quantity, note, created_at) VALUES (?,?,?,?,?,?)`,
+		`INSERT INTO transactions (barcode, item_name, type, quantity, note, created_at) VALUES ($1,$2,$3,$4,$5,$6)`,
 		t.Barcode, t.ItemName, t.Type, t.Quantity, t.Note, time.Now())
 	return err
 }
@@ -168,7 +168,7 @@ func (s *Store) ListTransactions(barcode string, limit int) ([]models.Transactio
 	q := `SELECT id, barcode, item_name, type, quantity, note, created_at FROM transactions`
 	args := []any{}
 	if barcode != "" {
-		q += ` WHERE barcode = ?`
+		q += ` WHERE barcode = $1`
 		args = append(args, barcode)
 	}
 	q += ` ORDER BY created_at DESC`
@@ -204,7 +204,7 @@ func (s *Store) Stats() (map[string]any, error) {
 	if err := s.db.QueryRow(`SELECT COUNT(*) FROM items WHERE quantity = 0`).Scan(&outOfStock); err != nil {
 		return nil, err
 	}
-	if err := s.db.QueryRow(`SELECT COUNT(*) FROM transactions WHERE DATE(created_at) = DATE('now')`).Scan(&scansToday); err != nil {
+	if err := s.db.QueryRow(`SELECT COUNT(*) FROM transactions WHERE DATE(created_at) = CURRENT_DATE`).Scan(&scansToday); err != nil {
 		return nil, err
 	}
 	var totalCategories int64
