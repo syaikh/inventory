@@ -1,0 +1,195 @@
+package main
+
+import (
+	"flag"
+	"fmt"
+	"log"
+	"net/http"
+	"os"
+	"strings"
+
+	"inventory/internal/handlers"
+	"inventory/internal/models"
+	"inventory/internal/scanner"
+	"inventory/internal/store"
+)
+
+// Configuration constants
+const (
+	defaultAddr     = ":8080"
+	defaultScanMode = "in"
+	defaultUnit     = "pcs"
+	bufferSize      = 32
+)
+
+// Config holds all application configuration
+type Config struct {
+	Addr     string
+	DBDSN    string
+	Device   string
+	ScanMode string
+	ListDevices bool
+}
+
+// ScanService handles scanner event processing
+type ScanService struct {
+	store *store.Store
+	handler *handlers.Handler
+	mode   string
+}
+
+func startHTTPServer(addr string, h *handlers.Handler) error {
+	log.Printf("Inventory server running at http://localhost%s", addr)
+	return http.ListenAndServe(addr, h.Routes())
+}
+
+func main() {
+	config := parseConfig()
+
+	if config.ListDevices {
+		devs, err := scanner.FindScanners()
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "Error scanning devices:", err)
+			os.Exit(1)
+		}
+		if len(devs) == 0 {
+			fmt.Println("No HID keyboard/scanner devices found in /dev/input/")
+		} else {
+			fmt.Println("Detected devices:")
+			for _, d := range devs {
+				fmt.Println(" ", d)
+			}
+		}
+		return
+	}
+
+	// Initialize database
+	store, err := initializeDatabase(config.DBDSN)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer store.Close()
+
+	// Setup scanner
+	scanner, hidDevice, err := setupScanner(config.Device)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	// Validate scan mode
+	mode := strings.ToLower(config.ScanMode)
+	if mode != "in" && mode != "out" {
+		mode = defaultScanMode
+	}
+
+	// Initialize HTTP handler
+	handler := handlers.New(store)
+
+	// Initialize scan service
+	scanService := newScanService(store, handler, mode)
+
+	// Start scan service
+	startScanService(scanner, scanService)
+
+	// Start HTTP server
+	if err := startHTTPServer(config.Addr, handler); err != nil {
+		log.Fatal("HTTP server error:", err)
+	}
+}
+
+func main() {
+	addr := flag.String("addr", ":8080", "HTTP listen address")
+	dbDSN := flag.String("db", os.Getenv("DATABASE_URL"), "PostgreSQL DSN (default: env var DATABASE_URL)")
+	device := flag.String("device", "", "USB HID event device, e.g. /dev/input/event3 (auto-detect if empty)")
+	scanMode := flag.String("mode", "in", "Default scan mode: 'in' or 'out'")
+	listDevices := flag.Bool("list-devices", false, "List detected HID input devices and exit")
+	flag.Parse()
+
+	if *dbDSN == "" {
+		log.Fatal("DATABASE_URL environment variable not set and -db flag not provided")
+	}
+
+	if *listDevices {
+		devs, err := scanner.FindScanners()
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "Error scanning devices:", err)
+			os.Exit(1)
+		}
+		if len(devs) == 0 {
+			fmt.Println("No HID keyboard/scanner devices found in /dev/input/")
+		} else {
+			fmt.Println("Detected devices:")
+			for _, d := range devs {
+				fmt.Println(" ", d)
+			}
+		}
+		return
+
+
+// Initialize database
+store, err := initializeDatabase(config.DBDSN)
+if err != nil {
+log.Fatal(err)
+}
+defer store.Close()
+
+// Setup scanner
+scanner, hidDevice, err := setupScanner(config.Device)
+if err != nil {
+log.Fatal(err)
+}
+
+// Validate scan mode
+mode := strings.ToLower(config.ScanMode)
+if mode != "in" && mode != "out" {
+mode = defaultScanMode
+}
+
+// Initialize HTTP handler
+handler := handlers.New(store)
+
+// Initialize scan service
+scanService := newScanService(store, handler, mode)
+
+// Start scan service
+startScanService(scanner, scanService)
+
+// Start HTTP server
+if err := startHTTPServer(config.Addr, handler); err != nil {
+log.Fatal("HTTP server error:", err)
+}
+}
+
+// Initialize database
+store, err := initializeDatabase(config.DBDSN)
+if err != nil {
+log.Fatal(err)
+}
+defer store.Close()
+
+// Setup scanner
+scanner, hidDevice, err := setupScanner(config.Device)
+if err != nil {
+log.Fatal(err)
+}
+
+// Validate scan mode
+mode := strings.ToLower(config.ScanMode)
+if mode != "in" && mode != "out" {
+mode = defaultScanMode
+}
+
+// Initialize HTTP handler
+handler := handlers.New(store)
+
+// Initialize scan service
+scanService := newScanService(store, handler, mode)
+
+// Start scan service
+startScanService(scanner, scanService)
+
+// Start HTTP server
+if err := startHTTPServer(config.Addr, handler); err != nil {
+log.Fatal("HTTP server error:", err)
+}
+}

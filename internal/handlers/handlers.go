@@ -8,20 +8,58 @@ import (
 	"strings"
 
 	"inventory/internal/models"
-	"inventory/internal/store"
+	"inventory/internal/service"
 )
 
+// Constants for HTTP handling
+const (
+	defaultTransactionLimit = 50
+	contentTypeJSON         = "application/json"
+	contentTypeSSE          = "text/event-stream"
+)
+
+// Handler handles HTTP requests and responses
 type Handler struct {
-	store *store.Store
-	// scanBus broadcasts scan events to SSE clients
-	scanBus chan models.ScanEvent
+	svc service.InventoryService
 }
 
-func New(s *store.Store) *Handler {
-	return &Handler{store: s, scanBus: make(chan models.ScanEvent, 32)}
+func New(svc service.InventoryService) *Handler {
+	return &Handler{
+		svc: svc,
+	}
 }
 
-func (h *Handler) ScanBus() chan<- models.ScanEvent { return h.scanBus }
+// Helper functions for common operations
+func ensureNonNilSlice[T any](slice []T) []T {
+	if slice == nil {
+		return []T{}
+	}
+	return slice
+}
+
+func validateMethod(w http.ResponseWriter, r *http.Request, allowedMethod string) bool {
+	if r.Method != allowedMethod {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return false
+	}
+	return true
+}
+
+func parseIDFromPath(path, prefix string) (int64, error) {
+	idStr := strings.TrimPrefix(path, prefix)
+	return strconv.ParseInt(idStr, 10, 64)
+}
+
+func parseLimitParam(r *http.Request, defaultLimit int) int {
+	limitStr := r.URL.Query().Get("limit")
+	if limitStr == "" {
+		return defaultLimit
+	}
+	if limit, err := strconv.Atoi(limitStr); err == nil && limit > 0 {
+		return limit
+	}
+	return defaultLimit
+}
 
 func (h *Handler) Routes() http.Handler {
 	mux := http.NewServeMux()
@@ -46,66 +84,33 @@ func (h *Handler) Routes() http.Handler {
 
 // POST /api/scan  { barcode, mode, qty }
 func (h *Handler) handleScan(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", 405)
+	if !validateMethod(w, r, http.MethodPost) {
 		return
 	}
+
 	var ev models.ScanEvent
 	if err := json.NewDecoder(r.Body).Decode(&ev); err != nil {
-		http.Error(w, err.Error(), 400)
+		http.Error(w, "invalid JSON: "+err.Error(), http.StatusBadRequest)
 		return
 	}
+
 	if ev.Barcode == "" {
-		http.Error(w, "barcode required", 400)
+		http.Error(w, "barcode required", http.StatusBadRequest)
 		return
 	}
+
 	if ev.Qty == 0 {
 		ev.Qty = 1
 	}
 
-	item, err := h.store.GetItem(ev.Barcode)
+	// Process scan event via service
+	updatedItem, err := h.svc.ProcessScan(ev)
 	if err != nil {
 		jsonErr(w, err)
 		return
 	}
 
-	// Auto-create item if not found
-	if item == nil {
-		item = &models.Item{Barcode: ev.Barcode, Name: "Unknown — " + ev.Barcode, Unit: "pcs"}
-		if err := h.store.UpsertItem(item); err != nil {
-			jsonErr(w, err)
-			return
-		}
-		item, _ = h.store.GetItem(ev.Barcode)
-	}
-
-	delta := ev.Qty
-	txType := "scan_in"
-	if ev.Mode == "out" {
-		delta = -ev.Qty
-		txType = "scan_out"
-	}
-
-	updated, err := h.store.UpdateQuantity(ev.Barcode, delta)
-	if err != nil {
-		jsonErr(w, err)
-		return
-	}
-
-	h.store.AddTransaction(&models.Transaction{
-		Barcode:  ev.Barcode,
-		ItemName: item.Name,
-		Type:     txType,
-		Quantity: ev.Qty,
-	})
-
-	// Broadcast to SSE clients
-	select {
-	case h.scanBus <- ev:
-	default:
-	}
-
-	jsonOK(w, updated)
+	jsonOK(w, updatedItem)
 }
 
 // GET /api/items?search=&category=
@@ -113,125 +118,159 @@ func (h *Handler) handleScan(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) handleItems(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
-		search := r.URL.Query().Get("search")
-		category := r.URL.Query().Get("category")
-		items, err := h.store.ListItems(search, category)
-		if err != nil {
-			jsonErr(w, err)
-			return
-		}
-		if items == nil {
-			items = []models.Item{}
-		}
-		jsonOK(w, items)
-
+		h.handleGetItems(w, r)
 	case http.MethodPost:
-		var it models.Item
-		if err := json.NewDecoder(r.Body).Decode(&it); err != nil {
-			http.Error(w, err.Error(), 400)
-			return
-		}
-		if err := h.store.UpsertItem(&it); err != nil {
-			jsonErr(w, err)
-			return
-		}
-		updated, _ := h.store.GetItem(it.Barcode)
-		jsonOK(w, updated)
-
+		h.handleCreateItem(w, r)
 	default:
-		http.Error(w, "method not allowed", 405)
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
+}
+
+func (h *Handler) handleGetItems(w http.ResponseWriter, r *http.Request) {
+	search := r.URL.Query().Get("search")
+	category := r.URL.Query().Get("category")
+
+	items, err := h.svc.ListItems(search, category)
+	if err != nil {
+		jsonErr(w, err)
+		return
+	}
+
+	jsonOK(w, ensureNonNilSlice(items))
+}
+
+func (h *Handler) handleCreateItem(w http.ResponseWriter, r *http.Request) {
+	var item models.Item
+	if err := json.NewDecoder(r.Body).Decode(&item); err != nil {
+		http.Error(w, "invalid JSON: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	if err := h.svc.UpsertItem(&item); err != nil {
+		jsonErr(w, err)
+		return
+	}
+
+	// Return the updated/created item
+	updated, err := h.svc.GetItem(item.Barcode)
+	if err != nil {
+		jsonErr(w, err)
+		return
+	}
+
+	jsonOK(w, updated)
 }
 
 // GET /api/items/{id}
 // PUT /api/items/{id}
 // DELETE /api/items/{id}
 func (h *Handler) handleItemByID(w http.ResponseWriter, r *http.Request) {
-	idStr := strings.TrimPrefix(r.URL.Path, "/api/items/")
-	id, err := strconv.ParseInt(idStr, 10, 64)
+	id, err := parseIDFromPath(r.URL.Path, "/api/items/")
 	if err != nil {
-		http.Error(w, "invalid id", 400)
+		http.Error(w, "invalid id", http.StatusBadRequest)
 		return
 	}
 
 	switch r.Method {
 	case http.MethodGet:
-		item, err := h.store.GetItemByID(id)
-		if err != nil {
-			jsonErr(w, err)
-			return
-		}
-		if item == nil {
-			http.NotFound(w, r)
-			return
-		}
-		jsonOK(w, item)
-
+		h.handleGetItemByID(w, r, id)
 	case http.MethodPut:
-		var it models.Item
-		if err := json.NewDecoder(r.Body).Decode(&it); err != nil {
-			http.Error(w, err.Error(), 400)
-			return
-		}
-		if err := h.store.UpsertItem(&it); err != nil {
-			jsonErr(w, err)
-			return
-		}
-		updated, _ := h.store.GetItemByID(id)
-		jsonOK(w, updated)
-
+		h.handleUpdateItem(w, r, id)
 	case http.MethodDelete:
-		if err := h.store.DeleteItem(id); err != nil {
-			jsonErr(w, err)
-			return
-		}
-		jsonOK(w, map[string]bool{"deleted": true})
-
+		h.handleDeleteItem(w, r, id)
 	default:
-		http.Error(w, "method not allowed", 405)
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
+}
+
+func (h *Handler) handleGetItemByID(w http.ResponseWriter, r *http.Request, id int64) {
+	item, err := h.svc.GetItemByID(id)
+	if err != nil {
+		jsonErr(w, err)
+		return
+	}
+	if item == nil {
+		http.NotFound(w, r)
+		return
+	}
+	jsonOK(w, item)
+}
+
+func (h *Handler) handleUpdateItem(w http.ResponseWriter, r *http.Request, id int64) {
+	var item models.Item
+	if err := json.NewDecoder(r.Body).Decode(&item); err != nil {
+		http.Error(w, "invalid JSON: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	if err := h.svc.UpsertItem(&item); err != nil {
+		jsonErr(w, err)
+		return
+	}
+
+	// Return the updated item
+	updated, err := h.svc.GetItemByID(id)
+	if err != nil {
+		jsonErr(w, err)
+		return
+	}
+
+	jsonOK(w, updated)
+}
+
+func (h *Handler) handleDeleteItem(w http.ResponseWriter, _ *http.Request, id int64) {
+	if err := h.svc.DeleteItem(id); err != nil {
+		jsonErr(w, err)
+		return
+	}
+	jsonOK(w, map[string]bool{"deleted": true})
 }
 
 // GET /api/transactions?barcode=&limit=50
 func (h *Handler) handleTransactions(w http.ResponseWriter, r *http.Request) {
-	barcode := r.URL.Query().Get("barcode")
-	limit := 50
-	if l := r.URL.Query().Get("limit"); l != "" {
-		if n, err := strconv.Atoi(l); err == nil {
-			limit = n
-		}
+	if !validateMethod(w, r, http.MethodGet) {
+		return
 	}
-	txs, err := h.store.ListTransactions(barcode, limit)
+
+	barcode := r.URL.Query().Get("barcode")
+	limit := parseLimitParam(r, defaultTransactionLimit)
+
+	transactions, err := h.svc.ListTransactions(barcode, limit)
 	if err != nil {
 		jsonErr(w, err)
 		return
 	}
-	if txs == nil {
-		txs = []models.Transaction{}
-	}
-	jsonOK(w, txs)
+
+	jsonOK(w, ensureNonNilSlice(transactions))
 }
 
 // GET /api/categories
 func (h *Handler) handleCategories(w http.ResponseWriter, r *http.Request) {
-	cats, err := h.store.Categories()
+	if !validateMethod(w, r, http.MethodGet) {
+		return
+	}
+
+	categories, err := h.svc.Categories()
 	if err != nil {
 		jsonErr(w, err)
 		return
 	}
-	if cats == nil {
-		cats = []string{}
-	}
-	jsonOK(w, cats)
+
+	jsonOK(w, ensureNonNilSlice(categories))
 }
 
 // GET /api/stats
 func (h *Handler) handleStats(w http.ResponseWriter, r *http.Request) {
-	stats, err := h.store.Stats()
+	if !validateMethod(w, r, http.MethodGet) {
+		return
+	}
+
+	stats, err := h.svc.Stats()
 	if err != nil {
 		jsonErr(w, err)
 		return
 	}
+
 	jsonOK(w, stats)
 }
 
@@ -239,7 +278,7 @@ func (h *Handler) handleStats(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) handleSSE(w http.ResponseWriter, r *http.Request) {
 	flusher, ok := w.(http.Flusher)
 	if !ok {
-		http.Error(w, "SSE not supported", 500)
+		http.Error(w, "SSE not supported", http.StatusInternalServerError)
 		return
 	}
 	w.Header().Set("Content-Type", "text/event-stream")
@@ -247,25 +286,32 @@ func (h *Handler) handleSSE(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Connection", "keep-alive")
 	w.Header().Set("Access-Control-Allow-Origin", "*")
 
+	ctx := r.Context()
+	_ = r // suppress unused parameter warning
 	for {
 		select {
-		case ev := <-h.scanBus:
-			data, _ := json.Marshal(ev)
+		case ev := <-h.svc.ScanBus():
+			data, err := json.Marshal(ev)
+			if err != nil {
+				// Skip malformed events
+				continue
+			}
 			w.Write([]byte("data: " + string(data) + "\n\n"))
 			flusher.Flush()
-		case <-r.Context().Done():
+		case <-ctx.Done():
 			return
 		}
 	}
 }
 
-func jsonOK(w http.ResponseWriter, v interface{}) {
-	w.Header().Set("Content-Type", "application/json")
+func jsonOK(w http.ResponseWriter, v any) {
+	w.Header().Set("Content-Type", contentTypeJSON)
+	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(v)
 }
 
 func jsonErr(w http.ResponseWriter, err error) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(500)
+	w.Header().Set("Content-Type", contentTypeJSON)
+	w.WriteHeader(http.StatusInternalServerError)
 	json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
 }
