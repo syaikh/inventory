@@ -16,7 +16,7 @@ import (
 
 func main() {
 	addr := flag.String("addr", ":8080", "HTTP listen address")
-	dbDSN := flag.String("db", "postgres://user:password@localhost/inventory?sslmode=disable", "PostgreSQL DSN")
+	dbDSN := flag.String("db", "postgres://devuser:password@localhost/devdb?sslmode=disable", "PostgreSQL DSN")
 	device := flag.String("device", "", "USB HID event device, e.g. /dev/input/event3 (auto-detect if empty)")
 	scanMode := flag.String("mode", "in", "Default scan mode: 'in' or 'out'")
 	listDevices := flag.Bool("list-devices", false, "List detected HID input devices and exit")
