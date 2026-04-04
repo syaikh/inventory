@@ -2,9 +2,9 @@ package models
 
 import "time"
 
-type Item struct {
+type Product struct {
 	ID        int64     `json:"id"`
-	Barcode   string    `json:"barcode"`
+	Barcodes  []string  `json:"barcodes"`
 	Name      string    `json:"name"`
 	SKU       string    `json:"sku"`
 	Category  string    `json:"category"`
@@ -17,13 +17,13 @@ type Item struct {
 }
 
 type Transaction struct {
-	ID        int64     `json:"id"`
-	Barcode   string    `json:"barcode"`
-	ItemName  string    `json:"item_name"`
-	Type      string    `json:"type"` // "scan_in", "scan_out", "adjust"
-	Quantity  int       `json:"quantity"`
-	Note      string    `json:"note"`
-	CreatedAt time.Time `json:"created_at"`
+	ID          int64     `json:"id"`
+	Barcode     string    `json:"barcode"`
+	ProductName string    `json:"product_name"`
+	Type        string    `json:"type"` // "scan_in", "scan_out", "adjust"
+	Quantity    int       `json:"quantity"`
+	Note        string    `json:"note"`
+	CreatedAt   time.Time `json:"created_at"`
 }
 
 type ScanEvent struct {
@@ -31,3 +31,4 @@ type ScanEvent struct {
 	Mode    string `json:"mode"` // "in" or "out"
 	Qty     int    `json:"qty"`
 }
+

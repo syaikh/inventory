@@ -6,7 +6,7 @@
   <table>
     <thead>
       <tr>
-        <th>Barcode</th>
+        <th>Barcodes</th>
         <th>Name</th>
         <th>Category</th>
         <th>Stock</th>
@@ -21,7 +21,7 @@
       {:else}
         {#each $lowStock as i}
           <tr>
-            <td><code>{i.barcode}</code></td>
+            <td><code>{i.barcodes && i.barcodes.length ? i.barcodes.join(', ') : '—'}</code></td>
             <td>{i.name}</td>
             <td>{i.category || '—'}</td>
             <td class={i.quantity===0 ? 'qty-low' : 'qty-ok'}>{i.quantity}</td>

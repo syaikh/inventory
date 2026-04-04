@@ -1,7 +1,10 @@
 package handlers
 
 import (
+	"encoding/csv"
 	"encoding/json"
+	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"strconv"
@@ -65,8 +68,9 @@ func (h *Handler) Routes() http.Handler {
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("/api/scan", h.handleScan)
-	mux.HandleFunc("/api/items", h.handleItems)
-	mux.HandleFunc("/api/items/", h.handleItemByID)
+	mux.HandleFunc("/api/products", h.handleProducts)
+	mux.HandleFunc("/api/products/upload-csv", h.handleCSVUpload)
+	mux.HandleFunc("/api/products/", h.handleProductByID)
 	mux.HandleFunc("/api/transactions", h.handleTransactions)
 	mux.HandleFunc("/api/categories", h.handleCategories)
 	mux.HandleFunc("/api/stats", h.handleStats)
@@ -104,68 +108,76 @@ func (h *Handler) handleScan(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Process scan event via service
-	updatedItem, err := h.svc.ProcessScan(ev)
+	updatedProduct, err := h.svc.ProcessScan(ev)
 	if err != nil {
 		jsonErr(w, err)
 		return
 	}
 
-	jsonOK(w, updatedItem)
+	jsonOK(w, updatedProduct)
 }
 
-// GET /api/items?search=&category=
-// POST /api/items (upsert)
-func (h *Handler) handleItems(w http.ResponseWriter, r *http.Request) {
+// GET /api/products?search=&category=
+// POST /api/products (upsert)
+func (h *Handler) handleProducts(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
-		h.handleGetItems(w, r)
+		h.handleGetProducts(w, r)
 	case http.MethodPost:
-		h.handleCreateItem(w, r)
+		h.handleCreateProduct(w, r)
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
 }
 
-func (h *Handler) handleGetItems(w http.ResponseWriter, r *http.Request) {
+func (h *Handler) handleGetProducts(w http.ResponseWriter, r *http.Request) {
 	search := r.URL.Query().Get("search")
 	category := r.URL.Query().Get("category")
 
-	items, err := h.svc.ListItems(search, category)
+	products, err := h.svc.ListProducts(search, category)
 	if err != nil {
 		jsonErr(w, err)
 		return
 	}
 
-	jsonOK(w, ensureNonNilSlice(items))
+	jsonOK(w, ensureNonNilSlice(products))
 }
 
-func (h *Handler) handleCreateItem(w http.ResponseWriter, r *http.Request) {
-	var item models.Item
-	if err := json.NewDecoder(r.Body).Decode(&item); err != nil {
+func (h *Handler) handleCreateProduct(w http.ResponseWriter, r *http.Request) {
+	var product models.Product
+	if err := json.NewDecoder(r.Body).Decode(&product); err != nil {
 		http.Error(w, "invalid JSON: "+err.Error(), http.StatusBadRequest)
 		return
 	}
 
-	if err := h.svc.UpsertItem(&item); err != nil {
+	if err := h.svc.UpsertProduct(&product); err != nil {
 		jsonErr(w, err)
 		return
 	}
 
-	// Return the updated/created item
-	updated, err := h.svc.GetItem(item.Barcode)
-	if err != nil {
-		jsonErr(w, err)
+	// For creating, we use the primary barcode to fetch if we don't have ID back from UpsertProduct (though Upsert updates ID)
+	var updated *models.Product
+	var errFetch error
+
+	if product.ID != 0 {
+		updated, errFetch = h.svc.GetProductByID(product.ID)
+	} else if len(product.Barcodes) > 0 {
+		updated, errFetch = h.svc.GetProduct(product.Barcodes[0])
+	}
+	
+	if errFetch != nil || updated == nil {
+		jsonErr(w, fmt.Errorf("failed to reload product after creation"))
 		return
 	}
 
 	jsonOK(w, updated)
 }
 
-// GET /api/items/{id}
-// PUT /api/items/{id}
-// DELETE /api/items/{id}
-func (h *Handler) handleItemByID(w http.ResponseWriter, r *http.Request) {
-	id, err := parseIDFromPath(r.URL.Path, "/api/items/")
+// GET /api/products/{id}
+// PUT /api/products/{id}
+// DELETE /api/products/{id}
+func (h *Handler) handleProductByID(w http.ResponseWriter, r *http.Request) {
+	id, err := parseIDFromPath(r.URL.Path, "/api/products/")
 	if err != nil {
 		http.Error(w, "invalid id", http.StatusBadRequest)
 		return
@@ -173,43 +185,45 @@ func (h *Handler) handleItemByID(w http.ResponseWriter, r *http.Request) {
 
 	switch r.Method {
 	case http.MethodGet:
-		h.handleGetItemByID(w, r, id)
+		h.handleGetProductByID(w, r, id)
 	case http.MethodPut:
-		h.handleUpdateItem(w, r, id)
+		h.handleUpdateProduct(w, r, id)
 	case http.MethodDelete:
-		h.handleDeleteItem(w, r, id)
+		h.handleDeleteProduct(w, r, id)
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
 }
 
-func (h *Handler) handleGetItemByID(w http.ResponseWriter, r *http.Request, id int64) {
-	item, err := h.svc.GetItemByID(id)
+func (h *Handler) handleGetProductByID(w http.ResponseWriter, r *http.Request, id int64) {
+	product, err := h.svc.GetProductByID(id)
 	if err != nil {
 		jsonErr(w, err)
 		return
 	}
-	if item == nil {
+	if product == nil {
 		http.NotFound(w, r)
 		return
 	}
-	jsonOK(w, item)
+	jsonOK(w, product)
 }
 
-func (h *Handler) handleUpdateItem(w http.ResponseWriter, r *http.Request, id int64) {
-	var item models.Item
-	if err := json.NewDecoder(r.Body).Decode(&item); err != nil {
+func (h *Handler) handleUpdateProduct(w http.ResponseWriter, r *http.Request, id int64) {
+	var product models.Product
+	if err := json.NewDecoder(r.Body).Decode(&product); err != nil {
 		http.Error(w, "invalid JSON: "+err.Error(), http.StatusBadRequest)
 		return
 	}
+	
+	product.ID = id // ensure we update the correct ID
 
-	if err := h.svc.UpsertItem(&item); err != nil {
+	if err := h.svc.UpsertProduct(&product); err != nil {
 		jsonErr(w, err)
 		return
 	}
 
-	// Return the updated item
-	updated, err := h.svc.GetItemByID(id)
+	// Return the updated product
+	updated, err := h.svc.GetProductByID(id)
 	if err != nil {
 		jsonErr(w, err)
 		return
@@ -218,8 +232,8 @@ func (h *Handler) handleUpdateItem(w http.ResponseWriter, r *http.Request, id in
 	jsonOK(w, updated)
 }
 
-func (h *Handler) handleDeleteItem(w http.ResponseWriter, _ *http.Request, id int64) {
-	if err := h.svc.DeleteItem(id); err != nil {
+func (h *Handler) handleDeleteProduct(w http.ResponseWriter, _ *http.Request, id int64) {
+	if err := h.svc.DeleteProduct(id); err != nil {
 		jsonErr(w, err)
 		return
 	}
@@ -274,6 +288,100 @@ func (h *Handler) handleStats(w http.ResponseWriter, r *http.Request) {
 	jsonOK(w, stats)
 }
 
+// POST /api/products/upload-csv
+func (h *Handler) handleCSVUpload(w http.ResponseWriter, r *http.Request) {
+	if !validateMethod(w, r, http.MethodPost) {
+		return
+	}
+
+	if err := r.ParseMultipartForm(10 << 20); err != nil {
+		http.Error(w, "invalid form", http.StatusBadRequest)
+		return
+	}
+
+	file, _, err := r.FormFile("file")
+	if err != nil {
+		http.Error(w, "missing file", http.StatusBadRequest)
+		return
+	}
+	defer file.Close()
+
+	reader := csv.NewReader(file)
+	// Read header
+	_, err = reader.Read()
+	if err != nil {
+		http.Error(w, "failed to read header", http.StatusBadRequest)
+		return
+	}
+
+	var successCount int
+	var errorsList []string
+
+	for {
+		record, err := reader.Read()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			continue // skip bad lines
+		}
+
+		if len(record) < 8 {
+			errorsList = append(errorsList, fmt.Sprintf("invalid row format: %v", record))
+			continue
+		}
+
+		name := strings.TrimSpace(record[0])
+		if name == "" {
+			continue // skip empty
+		}
+		category := strings.TrimSpace(record[1])
+		price, _ := strconv.ParseFloat(strings.TrimSpace(record[2]), 64)
+		qty, _ := strconv.Atoi(strings.TrimSpace(record[3]))
+		sku := strings.TrimSpace(record[4])
+		unit := strings.TrimSpace(record[5])
+		if unit == "" {
+			unit = "pcs"
+		}
+		location := strings.TrimSpace(record[6])
+		barcodesStr := strings.TrimSpace(record[7])
+		
+		var barcodes []string
+		if barcodesStr != "" {
+			parts := strings.Split(barcodesStr, ",")
+			for _, p := range parts {
+				p = strings.TrimSpace(p)
+				if p != "" {
+					barcodes = append(barcodes, p)
+				}
+			}
+		}
+
+		product := &models.Product{
+			Name:     name,
+			Category: category,
+			Price:    price,
+			Quantity: qty,
+			SKU:      sku,
+			Unit:     unit,
+			Location: location,
+			Barcodes: barcodes,
+		}
+
+		if err := h.svc.UpsertProduct(product); err != nil {
+			errorsList = append(errorsList, fmt.Sprintf("failed to save product %s: %v", name, err))
+		} else {
+			successCount++
+		}
+	}
+
+	jsonOK(w, map[string]any{
+		"success": successCount,
+		"errors":  errorsList,
+	})
+}
+
+
 // GET /api/events  — Server-Sent Events for real-time scan notifications
 func (h *Handler) handleSSE(w http.ResponseWriter, r *http.Request) {
 	flusher, ok := w.(http.Flusher)
@@ -287,7 +395,6 @@ func (h *Handler) handleSSE(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Access-Control-Allow-Origin", "*")
 
 	ctx := r.Context()
-	_ = r // suppress unused parameter warning
 	for {
 		select {
 		case ev := <-h.svc.ScanBus():

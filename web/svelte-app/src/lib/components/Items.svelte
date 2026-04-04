@@ -1,7 +1,8 @@
 <script>
   import { items, categories } from '$lib/stores.js';
-  import { fetchItems, fetchCategories, deleteItemById } from '$lib/api.js';
+  import { fetchProducts, fetchCategories, deleteProductById, uploadCSV } from '$lib/api.js';
   import { onMount } from 'svelte';
+  import { toastVisible, toastMsg, toastError } from '$lib/stores.js';
 
   let searchInput = '';
   let selectedCategory = '';
@@ -29,13 +30,13 @@
   }
 
   async function loadItems() {
-    const itemList = await fetchItems(searchInput, selectedCategory);
+    const itemList = await fetchProducts(searchInput, selectedCategory);
     if (itemList) items.set(itemList);
   }
 
   async function handleDelete(id) {
     if (!confirm('Delete this item?')) return;
-    const success = await deleteItemById(id);
+    const success = await deleteProductById(id);
     if (success) {
       await loadData();
       window.dispatchEvent(new CustomEvent('itemDeleted'));
@@ -49,9 +50,35 @@
   export async function openEditModal(item) {
     window.dispatchEvent(new CustomEvent('openItemModal', { detail: item }));
   }
+
+  let fileInput;
+  
+  async function handleFileUpload(e) {
+    const file = e.target.files[0];
+    if (!file) return;
+    try {
+      const res = await uploadCSV(file);
+      toastMsg.set(`Imported ${res.success} products.`);
+      toastError.set(false);
+      if (res.errors && res.errors.length > 0) {
+        console.warn('CSV Errors:', res.errors);
+        toastMsg.set(`Imported ${res.success}. Had ${res.errors.length} errors.`);
+        toastError.set(true);
+      }
+      toastVisible.set(true);
+      setTimeout(() => toastVisible.set(false), 3000);
+      await loadData();
+    } catch (err) {
+      toastMsg.set(err.message || 'Upload failed');
+      toastError.set(true);
+      toastVisible.set(true);
+      setTimeout(() => toastVisible.set(false), 2000);
+    }
+    e.target.value = null;
+  }
 </script>
 
-<h1>Items</h1>
+<h1>Products Inventory</h1>
 <div class="toolbar">
   <input 
     type="text" 
@@ -65,14 +92,16 @@
       <option value={c}>{c}</option>
     {/each}
   </select>
-  <button class="btn btn-primary" on:click={openAddModal}>+ Add Item</button>
+  <button class="btn btn-primary" on:click={openAddModal}>+ Add Product</button>
+  <button class="btn" on:click={() => fileInput.click()}>Import CSV</button>
+  <input type="file" accept=".csv" bind:this={fileInput} on:change={handleFileUpload} style="display:none" />
 </div>
 
 <div class="table-wrap">
   <table>
     <thead>
       <tr>
-        <th>Barcode</th>
+        <th>Barcodes</th>
         <th>Name</th>
         <th>SKU</th>
         <th>Category</th>
@@ -91,7 +120,7 @@
       {:else}
         {#each $items as i}
           <tr>
-            <td><code>{i.barcode}</code></td>
+            <td><code>{i.barcodes && i.barcodes.length ? i.barcodes.join(', ') : '—'}</code></td>
             <td>{i.name}</td>
             <td>{i.sku || '—'}</td>
             <td>{i.category || '—'}</td>

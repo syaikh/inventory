@@ -11,12 +11,12 @@ const (
 
 // StoreInterface defines the contract with the data layer.
 type StoreInterface interface {
-	GetItem(barcode string) (*models.Item, error)
-	GetItemByID(id int64) (*models.Item, error)
-	UpsertItem(item *models.Item) error
-	UpdateQuantity(barcode string, delta int) (*models.Item, error)
-	DeleteItem(id int64) error
-	ListItems(search, category string) ([]models.Item, error)
+	GetProduct(barcode string) (*models.Product, error)
+	GetProductByID(id int64) (*models.Product, error)
+	UpsertProduct(product *models.Product) error
+	UpdateQuantity(barcode string, delta int) (*models.Product, error)
+	DeleteProduct(id int64) error
+	ListProducts(search, category string) ([]models.Product, error)
 	ListTransactions(barcode string, limit int) ([]models.Transaction, error)
 	Categories() ([]string, error)
 	Stats() (map[string]any, error)
@@ -26,15 +26,15 @@ type StoreInterface interface {
 // InventoryService defines the business logic contract used by handlers.
 type InventoryService interface {
 	// Business operations
-	ProcessScan(ev models.ScanEvent) (*models.Item, error)
+	ProcessScan(ev models.ScanEvent) (*models.Product, error)
 	ScanBus() <-chan models.ScanEvent
 
 	// CRUD operations
-	GetItem(barcode string) (*models.Item, error)
-	GetItemByID(id int64) (*models.Item, error)
-	UpsertItem(item *models.Item) error
-	DeleteItem(id int64) error
-	ListItems(search, category string) ([]models.Item, error)
+	GetProduct(barcode string) (*models.Product, error)
+	GetProductByID(id int64) (*models.Product, error)
+	UpsertProduct(product *models.Product) error
+	DeleteProduct(id int64) error
+	ListProducts(search, category string) ([]models.Product, error)
 	ListTransactions(barcode string, limit int) ([]models.Transaction, error)
 	Categories() ([]string, error)
 	Stats() (map[string]any, error)
@@ -68,12 +68,12 @@ func (s *Service) broadcastScanEvent(ev models.ScanEvent) {
 }
 
 // ProcessScan handles the business logic of updating items and creating transactions based on a scan string.
-func (s *Service) ProcessScan(ev models.ScanEvent) (*models.Item, error) {
+func (s *Service) ProcessScan(ev models.ScanEvent) (*models.Product, error) {
 	// Broadcast the event so UI can react immediately
 	s.broadcastScanEvent(ev)
 
-	// Get or create item
-	item, err := s.getOrCreateItem(ev.Barcode)
+	// Get or create product
+	product, err := s.getOrCreateProduct(ev.Barcode)
 	if err != nil {
 		return nil, err
 	}
@@ -91,76 +91,76 @@ func (s *Service) ProcessScan(ev models.ScanEvent) (*models.Item, error) {
 	}
 
 	// Update quantity
-	updatedItem, err := s.store.UpdateQuantity(ev.Barcode, delta)
+	updatedProduct, err := s.store.UpdateQuantity(ev.Barcode, delta)
 	if err != nil {
 		return nil, fmt.Errorf("failed to update quantity for %s: %w", ev.Barcode, err)
 	}
 
 	// Record transaction
 	transaction := &models.Transaction{
-		Barcode:  ev.Barcode,
-		ItemName: item.Name,
-		Type:     txType,
-		Quantity: ev.Qty, 
+		Barcode:     ev.Barcode,
+		ProductName: product.Name,
+		Type:        txType,
+		Quantity:    ev.Qty, 
 	}
 
 	if err := s.store.AddTransaction(transaction); err != nil {
 		return nil, fmt.Errorf("failed to add transaction for %s: %w", ev.Barcode, err)
 	}
 
-	return updatedItem, nil
+	return updatedProduct, nil
 }
 
-// getOrCreateItem retrieves an item or creates an "Unknown" one if it doesn't exist
-func (s *Service) getOrCreateItem(barcode string) (*models.Item, error) {
-	item, err := s.store.GetItem(barcode)
+// getOrCreateProduct retrieves a product or creates an "Unknown" one if it doesn't exist
+func (s *Service) getOrCreateProduct(barcode string) (*models.Product, error) {
+	product, err := s.store.GetProduct(barcode)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get item %s: %w", barcode, err)
+		return nil, fmt.Errorf("failed to get product %s: %w", barcode, err)
 	}
 
-	if item == nil {
-		// Create unknown item
-		item = &models.Item{
-			Barcode: barcode,
-			Name:    "Unknown — " + barcode,
-			Unit:    "pcs",
+	if product == nil {
+		// Create unknown product
+		product = &models.Product{
+			Barcodes: []string{barcode},
+			Name:     "Unknown — " + barcode,
+			Unit:     "pcs",
 		}
-		if err := s.store.UpsertItem(item); err != nil {
-			return nil, fmt.Errorf("failed to create unknown item %s: %w", barcode, err)
+		if err := s.store.UpsertProduct(product); err != nil {
+			return nil, fmt.Errorf("failed to create unknown product %s: %w", barcode, err)
 		}
-		// Retrieve the created item with ID
-		item, err = s.store.GetItem(barcode)
+		// Retrieve the created product with ID
+		product, err = s.store.GetProduct(barcode)
 		if err != nil {
-			return nil, fmt.Errorf("failed to get created item %s: %w", barcode, err)
+			return nil, fmt.Errorf("failed to get created product %s: %w", barcode, err)
 		}
 	}
 
-	return item, nil
+	return product, nil
 }
 
-// GetItem retrieves an item by its barcode
-func (s *Service) GetItem(barcode string) (*models.Item, error) {
-	return s.store.GetItem(barcode)
+// GetProduct retrieves a product by its primary barcode search
+func (s *Service) GetProduct(barcode string) (*models.Product, error) {
+	return s.store.GetProduct(barcode)
 }
 
-// GetItemByID retrieves an item by its ID
-func (s *Service) GetItemByID(id int64) (*models.Item, error) {
-	return s.store.GetItemByID(id)
+// GetProductByID retrieves a product by its ID
+func (s *Service) GetProductByID(id int64) (*models.Product, error) {
+	return s.store.GetProductByID(id)
 }
 
-// UpsertItem creates or updates an item
-func (s *Service) UpsertItem(item *models.Item) error {
-	return s.store.UpsertItem(item)
+// UpsertProduct creates or updates a product
+func (s *Service) UpsertProduct(product *models.Product) error {
+	return s.store.UpsertProduct(product)
 }
 
-// DeleteItem removes an item by its ID
-func (s *Service) DeleteItem(id int64) error {
-	return s.store.DeleteItem(id)
+// DeleteProduct removes a product by its ID
+func (s *Service) DeleteProduct(id int64) error {
+	return s.store.DeleteProduct(id)
 }
 
-// ListItems returns a list of items based on search and category filters
-func (s *Service) ListItems(search, category string) ([]models.Item, error) {
-	return s.store.ListItems(search, category)
+// ListProducts returns a list of products based on search and category filters
+func (s *Service) ListProducts(search, category string) ([]models.Product, error) {
+	return s.store.ListProducts(search, category)
 }
 
 // ListTransactions returns a list of transactions for a barcode, with an optional limit
@@ -168,7 +168,7 @@ func (s *Service) ListTransactions(barcode string, limit int) ([]models.Transact
 	return s.store.ListTransactions(barcode, limit)
 }
 
-// Categories returns all unique item categories
+// Categories returns all unique product categories
 func (s *Service) Categories() ([]string, error) {
 	return s.store.Categories()
 }
@@ -177,3 +177,4 @@ func (s *Service) Categories() ([]string, error) {
 func (s *Service) Stats() (map[string]any, error) {
 	return s.store.Stats()
 }
+

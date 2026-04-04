@@ -13,9 +13,9 @@
 
   async function handleScan() {
     if (!barcodeInput.trim()) return;
-    const item = await submitScan(barcodeInput.trim(), $scanMode, Number(scanQty) || 1);
+    const product = await submitScan(barcodeInput.trim(), $scanMode, Number(scanQty) || 1);
     barcodeInput = '';
-    if (item && item.barcode) {
+    if (product) {
       const txs = await fetchScanHistory(20);
       if (txs) scanHistory.set(txs);
       window.dispatchEvent(new CustomEvent('scanSuccess'));
@@ -58,7 +58,7 @@
       <tr>
         <th>Time</th>
         <th>Barcode</th>
-        <th>Item</th>
+        <th>Product</th>
         <th>Type</th>
         <th>Qty</th>
       </tr>
@@ -73,7 +73,7 @@
           <tr>
             <td style="color:var(--muted)">{new Date(t.created_at).toLocaleString()}</td>
             <td><code>{t.barcode}</code></td>
-            <td>{t.item_name}</td>
+            <td>{t.product_name}</td>
             <td>
               {#if t.type === 'scan_in'}
                 <span class="badge badge-in">IN</span>

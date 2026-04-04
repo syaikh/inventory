@@ -6,8 +6,8 @@ export async function fetchStats() {
   return await res.json();
 }
 
-export async function fetchItems(search = '', category = '') {
-  const res = await fetch(`${API}/api/items?search=${encodeURIComponent(search)}&category=${encodeURIComponent(category)}`);
+export async function fetchProducts(search = '', category = '') {
+  const res = await fetch(`${API}/api/products?search=${encodeURIComponent(search)}&category=${encodeURIComponent(category)}`);
   if (!res.ok) return null;
   return await res.json();
 }
@@ -19,10 +19,10 @@ export async function fetchCategories() {
 }
 
 export async function fetchLowStock(limit = 10) {
-  const res = await fetch(API + '/api/items');
+  const res = await fetch(API + '/api/products');
   if (!res.ok) return [];
-  const allItems = await res.json();
-  return allItems.filter(i => i.quantity <= 5).sort((a,b) => a.quantity - b.quantity).slice(0, limit);
+  const allProducts = await res.json();
+  return allProducts.filter(i => i.quantity <= 5).sort((a,b) => a.quantity - b.quantity).slice(0, limit);
 }
 
 export async function fetchScanHistory(limit = 20) {
@@ -48,17 +48,30 @@ export async function submitScan(barcode, mode, qty = 1) {
   return await res.json();
 }
 
-export async function saveItem(item) {
-  const res = await fetch(API + '/api/items', {
+export async function saveProduct(product) {
+  const res = await fetch(API + '/api/products', {
     method: 'POST',
     headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify(item)
+    body: JSON.stringify(product)
   });
   if (!res.ok) return null;
   return await res.json();
 }
 
-export async function deleteItemById(id) {
-  const res = await fetch(API + '/api/items/' + id, { method: 'DELETE' });
+export async function deleteProductById(id) {
+  const res = await fetch(API + '/api/products/' + id, { method: 'DELETE' });
   return res.ok;
 }
+
+export async function uploadCSV(file) {
+  const formData = new FormData();
+  formData.append('file', file);
+  
+  const res = await fetch(API + '/api/products/upload-csv', {
+    method: 'POST',
+    body: formData
+  });
+  if (!res.ok) throw new Error(await res.text());
+  return await res.json();
+}
+

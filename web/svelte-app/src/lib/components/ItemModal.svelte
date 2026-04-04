@@ -1,8 +1,8 @@
 <script>
   import { itemModalOpen, editingItem, toastVisible, toastMsg, toastError } from '$lib/stores.js';
-  import { saveItem } from '$lib/api.js';
+  import { saveProduct } from '$lib/api.js';
 
-  let fBarcode = '';
+  let fBarcodes = '';
   let fName = '';
   let fSKU = '';
   let fCategory = '';
@@ -18,20 +18,20 @@
     setTimeout(() => toastVisible.set(false), 1800);
   }
 
-  export async function openModal(item = null) {
-    if (item) {
-      editingItem.set(item);
-      fBarcode = item.barcode;
-      fName = item.name;
-      fSKU = item.sku;
-      fCategory = item.category;
-      fLocation = item.location;
-      fQuantity = item.quantity;
-      fUnit = item.unit;
-      fPrice = item.price;
+  export async function openModal(product = null) {
+    if (product) {
+      editingItem.set(product);
+      fBarcodes = product.barcodes ? product.barcodes.join(', ') : '';
+      fName = product.name;
+      fSKU = product.sku;
+      fCategory = product.category;
+      fLocation = product.location;
+      fQuantity = product.quantity;
+      fUnit = product.unit;
+      fPrice = product.price;
     } else {
       editingItem.set(null);
-      fBarcode = '';
+      fBarcodes = '';
       fName = '';
       fSKU = '';
       fCategory = '';
@@ -48,12 +48,16 @@
   }
 
   async function handleSave() {
-    if (!fBarcode.trim() || !fName.trim()) {
-      showToast('Barcode and name are required', true);
+    if (!fName.trim()) {
+      showToast('Name is required', true);
       return;
     }
+    
+    // Parse comma-separated barcodes into an array
+    const barcodesArray = fBarcodes.split(',').map(b => b.trim()).filter(b => b.length > 0);
+
     const body = {
-      barcode: fBarcode.trim(),
+      barcodes: barcodesArray,
       name: fName.trim(),
       sku: fSKU.trim(),
       category: fCategory.trim(),
@@ -62,13 +66,19 @@
       unit: fUnit.trim() || 'pcs',
       price: Number(fPrice) || 0
     };
-    const result = await saveItem(body);
+    
+    // If we're editing, we should send the ID
+    if ($editingItem && $editingItem.id) {
+      body.id = $editingItem.id;
+    }
+
+    const result = await saveProduct(body);
     if (!result) {
-      showToast('Failed to save item', true);
+      showToast('Failed to save product', true);
       return;
     }
     closeModal();
-    showToast('Item saved');
+    showToast('Product saved');
     window.dispatchEvent(new CustomEvent('itemSaved'));
   }
 </script>
@@ -76,11 +86,11 @@
 {#if $itemModalOpen}
   <div class="overlay show">
     <div class="modal">
-      <h2>{$editingItem ? 'Edit Item' : 'Add Item'}</h2>
+      <h2>{$editingItem ? 'Edit Product' : 'Add Product'}</h2>
       <div class="form-row">
         <div class="form-group">
-          <label for="f-barcode">Barcode *</label>
-          <input id="f-barcode" type="text" bind:value={fBarcode} placeholder="e.g. 012345678905" />
+          <label for="f-barcode">Barcodes (Comma Separated)</label>
+          <input id="f-barcode" type="text" bind:value={fBarcodes} placeholder="e.g. 123, 456" />
         </div>
         <div class="form-group">
           <label for="f-sku">SKU</label>
