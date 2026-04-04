@@ -1,12 +1,17 @@
 package main
 
 import (
+	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"log"
 	"net/http"
 	"os"
+	"os/signal"
 	"strings"
+	"syscall"
+	"time"
 
 	"inventory/internal/handlers"
 	"inventory/internal/models"
@@ -79,10 +84,13 @@ func setupScanner(device string) (*scanner.Scanner, error) {
 	return sc, nil
 }
 
-func startScanService(sc *scanner.Scanner, svc service.InventoryService, mode string) {
+func startScanService(ctx context.Context, sc *scanner.Scanner, svc service.InventoryService, mode string) {
 	go func() {
 		for {
 			select {
+			case <-ctx.Done():
+				log.Println("[SCAN] shutting down scanner service")
+				return
 			case ev := <-sc.Events():
 				log.Printf("[SCAN] barcode=%s mode=%s", ev.Barcode, mode)
 				scanEv := models.ScanEvent{
@@ -100,9 +108,14 @@ func startScanService(sc *scanner.Scanner, svc service.InventoryService, mode st
 	}()
 }
 
-func startHTTPServer(addr string, h *handlers.Handler) error {
-	log.Printf("Inventory server running at http://localhost%s", addr)
-	return http.ListenAndServe(addr, h.Routes())
+func createHTTPServer(addr string, h *handlers.Handler) *http.Server {
+	return &http.Server{
+		Addr:         addr,
+		Handler:      h.Routes(),
+		ReadTimeout:  5 * time.Second,
+		WriteTimeout: 10 * time.Second,
+		IdleTimeout:  15 * time.Second,
+	}
 }
 
 func main() {
@@ -125,17 +138,21 @@ func main() {
 		return
 	}
 
+	// Create a context that listens for the interrupt signal from the OS.
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
 	// Initialize database
-	store, err := initializeDatabase(config.DBDSN)
+	dbStore, err := initializeDatabase(config.DBDSN)
 	if err != nil {
-		log.Fatal(err)
+		log.Fatalf("failed to initialize database: %v", err)
 	}
-	defer store.Close()
+	defer dbStore.Close()
 
 	// Setup scanner
 	hwScanner, err := setupScanner(config.Device)
 	if err != nil {
-		log.Fatal(err)
+		log.Fatalf("failed to setup scanner: %v", err)
 	}
 
 	// Validate scan mode
@@ -145,16 +162,39 @@ func main() {
 	}
 
 	// Initialize Service Layer
-	inventoryService := service.New(store)
+	inventoryService := service.New(dbStore)
 
 	// Initialize HTTP handler
 	handler := handlers.New(inventoryService)
 
-	// Start hardware scan service to translate hardware events to Service events
-	startScanService(hwScanner, inventoryService, mode)
+	// Start hardware scan service
+	startScanService(ctx, hwScanner, inventoryService, mode)
 
-	// Start HTTP server
-	if err := startHTTPServer(config.Addr, handler); err != nil {
-		log.Fatal("HTTP server error:", err)
+	// Configure HTTP server
+	srv := createHTTPServer(config.Addr, handler)
+
+	// Start HTTP server in a goroutine
+	go func() {
+		log.Printf("Inventory server running at http://localhost%s", config.Addr)
+		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			log.Fatalf("HTTP server error: %v", err)
+		}
+	}()
+
+	// Wait for interrupt signal
+	<-ctx.Done()
+	log.Println("\nShutdown signal received, initiating graceful shutdown...")
+
+	// Restore default behavior on the interrupt signal and notify user of shutdown.
+	stop()
+
+	// Perform graceful shutdown with a timeout (e.g., 5 seconds)
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	if err := srv.Shutdown(shutdownCtx); err != nil {
+		log.Fatalf("HTTP server shutdown forced: %v", err)
 	}
+
+	log.Println("Server exited properly")
 }
