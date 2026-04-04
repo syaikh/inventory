@@ -6,18 +6,19 @@ A lightweight inventory management system written in Go with USB barcode scanner
 
 - Real-time USB barcode scanner integration (HID keyboard emulation)
 - Web UI: dashboard, item manager, scanner page, transaction history
-- SQLite database (no external DB required)
+- PostgreSQL database integration
 - Server-Sent Events for live scan feed in browser
 - Auto-create new items on first scan
 - Scan IN / Scan OUT modes
 - REST API
+- Graceful shutdown and properly configured HTTP Timeouts
 
 ---
 
 ## Requirements
 
 - Go 1.21+
-- GCC (for go-sqlite3 CGO): `sudo apt install gcc` or `brew install gcc`
+- PostgreSQL Database Server (Local or Remote)
 - Linux: read permission on `/dev/input/eventX` for raw HID mode
 
 ---
@@ -25,13 +26,13 @@ A lightweight inventory management system written in Go with USB barcode scanner
 ## Build & Run
 
 ```bash
-# Install dependency
-go get github.com/mattn/go-sqlite3
-
 # Build
-go build -o inventory ./cmd/
+go build -o inventory ./cmd/...
 
-# Run (auto-detects USB scanner)
+# Setup Database connection string
+export DATABASE_URL="postgres://username:password@localhost:5432/inventory_db?sslmode=disable"
+
+# Run (auto-detects USB scanner & uses DATABASE_URL)
 ./inventory
 
 # Or specify device explicitly
@@ -43,8 +44,8 @@ go build -o inventory ./cmd/
 # Default scan mode (in or out)
 ./inventory -mode in
 
-# Custom port and DB path
-./inventory -addr :9000 -db /var/data/inventory.db
+# Custom port
+./inventory -addr :9000
 ```
 
 Open **http://localhost:8080** in your browser.
@@ -124,7 +125,7 @@ inventory/
 ├── internal/
 │   ├── models/models.go     # Item, Transaction, ScanEvent types
 │   ├── scanner/scanner.go   # USB HID + stdin barcode reader
-│   ├── store/store.go       # SQLite persistence layer
+│   ├── store/store.go       # PostgreSQL persistence layer
 │   └── handlers/handlers.go # HTTP API + SSE
 ├── web/static/
 │   └── index.html           # Single-page web UI
